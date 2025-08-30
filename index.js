@@ -1,5 +1,3 @@
-
-
 require('dotenv').config();
 const axios = require('axios');
 const fs = require('fs');
@@ -8,21 +6,48 @@ const path = require('path');
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const API_URL = 'https://api.themoviedb.org/3';
 
-async function search(query, type) {
+// Remove [tags] and collapse extra spaces
+function extractTitle(folderName) {
+  return folderName
+    .replace(/\[.*?\]/g, '')       // Remove things like [1080p], [WEB], etc.
+    .replace(/\s+/g, ' ')          // Collapse multiple spaces
+    .replace(/\s+\(\)/g, '')       // Remove empty parentheses
+    .trim();
+}
+
+// Search TMDB with fuzzy matching and year detection
+async function search(title, type) {
   try {
+    const query = title.replace(/\(.*?\)/g, '').trim(); // Remove year from query
     const response = await axios.get(`${API_URL}/search/${type}`, {
       params: {
         api_key: TMDB_API_KEY,
         query: query,
       },
     });
-    return response.data.results[0];
+
+    const results = response.data.results;
+    if (!results || results.length === 0) return null;
+
+    const yearMatch = title.match(/\((\d{4})\)/);
+    const targetYear = yearMatch ? parseInt(yearMatch[1]) : null;
+
+    if (targetYear) {
+      const match = results.find(r => {
+        const date = r.release_date || r.first_air_date || '';
+        return date.startsWith(targetYear.toString());
+      });
+      return match || results[0];
+    }
+
+    return results[0];
   } catch (error) {
-    console.error(`Error searching for ${query}:`, error.message);
+    console.error(`❌ Error searching for "${title}":`, error.message);
     return null;
   }
 }
 
+// Get poster path for a movie or show
 async function getPoster(id, type) {
   try {
     const response = await axios.get(`${API_URL}/${type}/${id}`, {
@@ -32,11 +57,12 @@ async function getPoster(id, type) {
     });
     return response.data.poster_path;
   } catch (error) {
-    console.error(`Error getting poster for ${type} ${id}:`, error.message);
+    console.error(`❌ Error getting poster for ${type} ID ${id}:`, error.message);
     return null;
   }
 }
 
+// Download poster image to file
 async function downloadImage(url, filepath) {
   try {
     const response = await axios({
@@ -51,43 +77,61 @@ async function downloadImage(url, filepath) {
       writer.on('error', reject);
     });
   } catch (error) {
-    console.error(`Error downloading image from ${url}:`, error.message);
+    console.error(`❌ Error downloading image from ${url}:`, error.message);
   }
 }
 
-async function processPath(itemPath) {
-    const itemName = path.basename(itemPath);
-    console.log(`Processing ${itemName}...`);
+// Process a single movie/show folder
+async function processFolder(folderPath) {
+  const folderName = path.basename(folderPath);
+  const cleanTitle = extractTitle(folderName);
 
-    let type = 'movie';
-    let result = await search(itemName, type);
+  console.log(`\n🎬 Processing: ${cleanTitle}`);
 
-    if (!result) {
-        type = 'tv';
-        result = await search(itemName, type);
-    }
+  let type = 'movie';
+  let result = await search(cleanTitle, type);
 
-    if (result) {
-        const posterPath = await getPoster(result.id, type);
-        if (posterPath) {
-            const posterUrl = `https://image.tmdb.org/t/p/original${posterPath}`;
-            const posterFilePath = path.join(itemPath, 'poster.jpg');
-            await downloadImage(posterUrl, posterFilePath);
-            console.log(`Downloaded poster for ${itemName}`);
-        } else {
-            console.log(`No poster found for ${itemName}`);
-        }
+  if (!result) {
+    type = 'tv';
+    result = await search(cleanTitle, type);
+  }
+
+  if (result) {
+    const posterPath = await getPoster(result.id, type);
+    if (posterPath) {
+      const posterUrl = `https://image.tmdb.org/t/p/original${posterPath}`;
+      const posterFilePath = path.join(folderPath, 'poster.jpg');
+      await downloadImage(posterUrl, posterFilePath);
+      console.log(`✅ Downloaded poster for "${cleanTitle}"`);
     } else {
-        console.log(`Could not find ${itemName} on TMDB.`);
+      console.log(`⚠️  No poster found for "${cleanTitle}"`);
     }
-}
-
-async function main(paths) {
-  for (const itemPath of paths) {
-    await processPath(itemPath);
+  } else {
+    console.log(`❌ Could not find "${cleanTitle}" on TMDB`);
   }
 }
 
-// Example usage:
-// const movieFolders = ['/path/to/your/movies/Movie 1', '/path/to/your/tv/Series 1'];
-// main(movieFolders);
+// Main function: scans all subfolders in the main directory
+async function main() {
+  const parentDir = 'D:/Videos/Movies'; // <- Change this if your path is different
+
+  if (!fs.existsSync(parentDir)) {
+    console.error(`❌ Folder does not exist: ${parentDir}`);
+    return;
+  }
+
+  const entries = fs.readdirSync(parentDir, { withFileTypes: true });
+  const folders = entries
+    .filter(entry => entry.isDirectory())
+    .map(entry => path.join(parentDir, entry.name));
+
+  console.log(`\n📂 Found ${folders.length} folders in "${parentDir}"`);
+
+  for (const folder of folders) {
+    await processFolder(folder);
+  }
+
+  console.log('\n✅ Done!');
+}
+
+main();
