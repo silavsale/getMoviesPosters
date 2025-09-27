@@ -1,10 +1,10 @@
 require('dotenv').config();
-const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
+var axios = require('axios');
+var fs = require('fs');
+var path = require('path');
 
-const TMDB_API_KEY = process.env.TMDB_API_KEY;
-const API_URL = 'https://api.themoviedb.org/3';
+var TMDB_API_KEY = process.env.TMDB_API_KEY;
+var API_URL = 'https://api.themoviedb.org/3';
 
 // Remove [tags] and collapse extra spaces
 function extractTitle(folderName) {
@@ -30,12 +30,12 @@ async function search(title, type) {
     if (!results || results.length === 0) return null;
 
     const yearMatch = title.match(/\((\d{4})\)/);
-    const targetYear = yearMatch ? parseInt(yearMatch[1]) : null;
+    const targetYear = yearMatch ? yearMatch[1]?.toString() : null;
 
     if (targetYear) {
-      const match = results.find(r => {
-        const date = r.release_date || r.first_air_date || '';
-        return date.startsWith(targetYear.toString());
+      const match = results.find(({release_date, first_air_date}) => {
+        const date = release_date || first_air_date || '';
+        return date.startsWith(targetYear);
       });
       return match || results[0];
     }
@@ -70,7 +70,7 @@ async function downloadImage(url, filepath) {
       method: 'GET',
       responseType: 'stream',
     });
-    const writer = fs.createWriteStream(filepath);
+    var writer = fs.createWriteStream(filepath);
     response.data.pipe(writer);
     return new Promise((resolve, reject) => {
       writer.on('finish', resolve);
@@ -89,9 +89,9 @@ async function processFolder(folderPath) {
   console.log(`\n🎬 Processing: ${cleanTitle}`);
 
   let type = 'movie';
-  let result = await search(cleanTitle, type);
+  let result;
 
-  if (!result) {
+  if (!(result = await search(cleanTitle, type))) {
     type = 'tv';
     result = await search(cleanTitle, type);
   }
@@ -127,9 +127,8 @@ async function main() {
 
   console.log(`\n📂 Found ${folders.length} folders in "${parentDir}"`);
 
-  for (const folder of folders) {
-    await processFolder(folder);
-  }
+  const promises = folders.map(folder => processSeriesFolder(folder));
+  await Promise.all(promises);
 
   console.log('\n✅ Done!');
 }
