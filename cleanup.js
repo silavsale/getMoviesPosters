@@ -1,16 +1,16 @@
-const fs = require('fs');
-const path = require('path');
+var fs = require('fs');
+var path = require('path');
 
 // Function to clean the folder by removing unwanted files
 function cleanupFolder(folderPath) {
   const files = fs.readdirSync(folderPath);
 
   files.forEach(file => {
-    const filePath = path.join(folderPath, file);
     const ext = path.extname(file).toLowerCase();
 
     // Remove all .txt files and non-poster .jpg files
     if (ext === '.txt' || (ext === '.jpg' && file !== 'poster.jpg')) {
+      const filePath = path.join(folderPath, file);
       try {
         fs.unlinkSync(filePath); // Deletes the file
         console.log(`✅ Deleted: ${filePath}`);
@@ -22,7 +22,7 @@ function cleanupFolder(folderPath) {
 }
 
 // Main function to clean all subfolders
-async function main() {
+function main() {
   const parentDir = 'D:/Videos/Movies'; // <- Change this to your folder path
 
   if (!fs.existsSync(parentDir)) {
